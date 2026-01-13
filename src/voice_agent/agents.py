@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 PROJECT_DIR = Path(__file__).parent.parent.parent
 CONFIG_FILE = PROJECT_DIR / "voice-agent-config.yaml"
 VOICE_MODE_FILE = PROJECT_DIR / "voice-mode.md"
-SESSION_FILE = PROJECT_DIR / ".session.json"
+SESSION_FILE = PROJECT_DIR / ".agent-session.json"
 
 
 @dataclass

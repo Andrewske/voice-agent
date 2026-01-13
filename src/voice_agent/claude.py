@@ -6,6 +6,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from voice_agent.agents import load_voice_mode_prompt
 from voice_agent.memory import get_memory_context
 
 logger = logging.getLogger(__name__)
@@ -13,14 +14,13 @@ logger = logging.getLogger(__name__)
 # Project directory where Claude Code runs from
 PROJECT_DIR = Path(__file__).parent.parent.parent
 DEFAULT_CONVERSATIONS_DIR = PROJECT_DIR / "conversations"
-VOICE_MODE_FILE = PROJECT_DIR / "voice-mode.md"
 
 
 def _get_session_file(conversations_dir: Path | None = None) -> Path:
     """Get the session file path for a given conversations directory."""
     if conversations_dir is None:
         conversations_dir = DEFAULT_CONVERSATIONS_DIR
-    return conversations_dir / ".session.json"
+    return conversations_dir / ".claude-session.json"
 
 
 def get_conversation_id(conversations_dir: Path | None = None) -> str | None:
@@ -101,13 +101,6 @@ def get_context_usage(conversations_dir: Path | None = None) -> str:
 
     except (json.JSONDecodeError, OSError):
         return "Couldn't read context usage."
-
-
-def load_voice_mode_prompt() -> str:
-    """Load the universal voice mode constraints."""
-    if not VOICE_MODE_FILE.exists():
-        return ""
-    return VOICE_MODE_FILE.read_text()
 
 
 def ask_claude(

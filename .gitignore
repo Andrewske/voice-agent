@@ -1,5 +1,5 @@
 .env
-.session.json
+.agent-session.json
 __pycache__/
 *.pyc
 .venv/
