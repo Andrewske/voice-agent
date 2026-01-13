@@ -1,0 +1,10 @@
+[Unit]
+Description=Run mem0 sync nightly at 11:59 PM
+
+[Timer]
+OnCalendar=*-*-* 23:59:00
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
