@@ -1,0 +1,33 @@
+[project]
+name = "voice-agent"
+version = "0.1.0"
+description = "Claude Code powered voice assistant"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+    "faster-whisper>=1.0",
+    "fastapi>=0.124.0",
+    "httpx>=0.28.1",
+    "kokoro>=0.9.4",
+    "openai-whisper>=20250625",
+    "python-dotenv>=1.0.1",
+    "python-multipart>=0.0.20",
+    "pyyaml>=6.0",
+    "soundfile>=0.13",
+    "uvicorn>=0.37.0",
+    "pytest>=8.0",
+]
+
+[tool.uv]
+package = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/voice_agent"]

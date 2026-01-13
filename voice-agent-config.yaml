@@ -1,0 +1,54 @@
+# voice-agent-config.yaml
+
+# Keywords for Whisper recognition - improves accuracy for these words
+keywords:
+  - agent
+  - diet
+  - budget
+  - bonanza
+  - career
+  - daily
+  - video games
+  - log
+  - listen
+  - undo
+  - repeat
+
+# Commands with agent allowlists (empty = universal)
+commands:
+  log:
+    agents: [diet]
+    silent: true
+    aliases: [add, record]
+  listen:
+    agents: []
+    silent: true
+    aliases: [note]
+  undo:
+    agents: []
+    silent: true
+    aliases: [cancel, nevermind]
+  repeat:
+    agents: []
+    silent: false
+    aliases: [again, replay]
+
+# Agent definitions - triggers auto-generated as "{name} agent"
+agents:
+  career:
+    path: "~/journal/agents/career"
+
+  budget:
+    path: "~/journal/agents/budget"
+
+  diet:
+    path: "~/journal/agents/diet"
+
+  daily:
+    path: "~/journal/agents/daily"
+
+  bonanza:
+    path: "~/journal/agents/bonanza"
+
+  video-games:
+    path: "~/journal/agents/video-games"
