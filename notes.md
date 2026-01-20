@@ -48,4 +48,3 @@ Remove asterisks from response before text-to-voice conversion.
 
 ## 
 
-Fix repeat
