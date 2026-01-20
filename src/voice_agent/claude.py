@@ -221,11 +221,23 @@ async def stream_claude(
     cwd: Path | None = None,
     conversations_dir: Path | None = None,
     agent: str = "default",
+    timeout: int | None = None,
 ) -> AsyncGenerator[tuple[str, str, str], None]:
     """
     Stream Claude response as async generator.
-    Yields: (event_type, content, conversation_id) tuples
-    event_type: 'thinking' | 'text' | 'done'
+
+    Args:
+        prompt: The user's message/question
+        cwd: Working directory for Claude (determines which CLAUDE.md is loaded)
+        conversations_dir: Directory for session files and conversation logs
+        agent: The current agent context for memory scoping
+        timeout: Optional total timeout in seconds. None means no timeout.
+                 Note: For streaming, timeout applies to the entire operation,
+                 not individual chunks. Consider that Claude may take time to think.
+
+    Yields:
+        (event_type, content, conversation_id) tuples
+        event_type: 'thinking' | 'text' | 'done'
     """
     # Default to project directory if not specified
     if cwd is None:
@@ -258,6 +270,16 @@ async def stream_claude(
     if conversation_id:
         cmd.extend(["--resume", conversation_id])
 
+    process = None
+    timeout_task = None
+
+    async def kill_on_timeout():
+        """Background task to kill process after timeout."""
+        await asyncio.sleep(timeout)  # type: ignore[arg-type]
+        if process and process.returncode is None:
+            process.kill()
+            raise asyncio.TimeoutError()
+
     try:
         # Start subprocess with async I/O
         process = await asyncio.create_subprocess_exec(
@@ -267,6 +289,10 @@ async def stream_claude(
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
         )
+
+        # Start timeout watchdog if specified
+        if timeout is not None:
+            timeout_task = asyncio.create_task(kill_on_timeout())
 
         # Send prompt to stdin
         if process.stdin:
@@ -338,10 +364,17 @@ async def stream_claude(
         yield "done", "", current_conversation_id or ""
 
     except asyncio.TimeoutError:
-        raise RuntimeError("Claude Code timed out")
+        raise RuntimeError(f"Claude Code timed out after {timeout}s")
     except Exception as e:
-        logger.error(f"Error in stream_claude: {e}")
+        logger.exception(f"Error in stream_claude: {e}")
         raise
+    finally:
+        # Cancel timeout watchdog if still running
+        if timeout_task and not timeout_task.done():
+            timeout_task.cancel()
+        # Ensure process is terminated
+        if process and process.returncode is None:
+            process.kill()
 
 
 def parse_claude_output(output: str) -> tuple[str, str, str | None, dict[str, int]]:

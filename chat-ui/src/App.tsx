@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Header } from '@/components/layout/Header'
-import { MessageList } from '@/components/chat/MessageList'
+import { MessageList, type MessageData } from '@/components/chat/MessageList'
 import { ChatInput } from '@/components/chat/ChatInput'
 import { useChat } from '@/hooks/useChat'
 import { useAgents } from '@/hooks/useAgents'
@@ -11,7 +11,7 @@ function App() {
   useTheme() // Initialize dark mode
 
   const { agents, activeAgent, switchAgent } = useAgents()
-  const [viewingHistoricalConversation, setViewingHistoricalConversation] = useState(false)
+  const [historicalMessages, setHistoricalMessages] = useState<MessageData[] | null>(null)
   const { loadConversation } = useConversations()
 
   const {
@@ -23,6 +23,10 @@ function App() {
     sendMessage,
     startNewSession,
   } = useChat(activeAgent || 'default')
+
+  // Use historical messages if viewing history, otherwise active chat
+  const displayMessages = historicalMessages ?? messages
+  const isViewingHistory = historicalMessages !== null
 
   const streamingContent =
     isStreaming && (streamingText || streamingThinking)
@@ -39,16 +43,19 @@ function App() {
 
   const handleNewChat = () => {
     startNewSession()
-    setViewingHistoricalConversation(false)
+    setHistoricalMessages(null)
   }
 
   const handleSelectConversation = async (conversationId: string) => {
     const conversation = await loadConversation(conversationId)
     if (conversation) {
       // Convert conversation messages to MessageData format
-      // For now, just log it - full implementation would set read-only mode
-      console.log('Load conversation:', conversation)
-      setViewingHistoricalConversation(true)
+      const converted: MessageData[] = conversation.messages.map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+        thinking: msg.thinking,
+      }))
+      setHistoricalMessages(converted)
     }
   }
 
@@ -62,13 +69,13 @@ function App() {
         onSelectConversation={handleSelectConversation}
       />
       <MessageList
-        messages={messages}
+        messages={displayMessages}
         streamingContent={streamingContent}
         isStreaming={isStreaming}
       />
       <ChatInput
         onSend={sendMessage}
-        disabled={isStreaming || viewingHistoricalConversation}
+        disabled={isStreaming || isViewingHistory}
       />
     </div>
   )

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { streamChat, type ChatEvent } from '@/api/client'
 import type { MessageData } from '@/components/chat/MessageList'
 
@@ -18,6 +18,13 @@ export function useChat(currentAgent: string = 'default'): UseChatReturn {
   const [streamingText, setStreamingText] = useState('')
   const [streamingThinking, setStreamingThinking] = useState('')
   const abortControllerRef = useRef<AbortController | null>(null)
+
+  // Cleanup: abort any in-flight stream on unmount
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort()
+    }
+  }, [])
 
   const sendMessage = async (content: string) => {
     // Add user message

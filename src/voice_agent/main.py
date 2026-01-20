@@ -2,9 +2,11 @@
 
 import atexit
 import json
+import logging
+import re
 import signal
 import tempfile
-import logging
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -164,6 +166,15 @@ PROJECT_DIR = Path(__file__).parent.parent.parent
 DEFAULT_CONVERSATIONS_DIR = PROJECT_DIR / "conversations"
 DEFAULT_CONVERSATIONS_DIR.mkdir(exist_ok=True)
 
+
+def get_claude_project_hash(project_dir: Path) -> str:
+    """Compute Claude Code's project hash from a directory path.
+
+    Claude Code uses the absolute path with slashes replaced by dashes.
+    Example: /home/kevin/coding/voice-agent -> -home-kevin-coding-voice-agent
+    """
+    return str(project_dir.resolve()).replace("/", "-")
+
 # Load configuration on startup
 CONFIG = load_agents_config()
 logger.info(f"Loaded {len(CONFIG.agents)} agents: {list(CONFIG.agents.keys())}")
@@ -321,8 +332,6 @@ async def process_voice(request: Request) -> Response:
                         with open(log_file, "r") as f:
                             content = f.read()
                             # Find all "**Agent:**" entries
-                            import re
-
                             matches = list(
                                 re.finditer(
                                     r"\*\*Agent:\*\* (.+?)(?=\n## |\n\*\*Agent thinking:\*\*|\Z)",
@@ -417,8 +426,6 @@ async def process_voice(request: Request) -> Response:
             # Handle case where trigger phrase was the entire message
             assistant_text = "I'm here. What would you like to discuss?"
         else:
-            import time
-
             logger.info("Getting Claude response...")
             start_time = time.time()
             # Pass agent name for memory scoping (None becomes "default")
@@ -437,18 +444,13 @@ async def process_voice(request: Request) -> Response:
         logger.info("Synthesizing speech...")
         try:
             # Strip markdown formatting for spoken output
-            import re
-
             speech_text = re.sub(r"\*+", "", assistant_text)  # Remove asterisks
             speech_text = re.sub(r"_+", "", speech_text)  # Remove underscores
             speech_text = re.sub(r"`+", "", speech_text)  # Remove backticks
             audio_bytes = await synthesize(speech_text)
         except Exception as tts_error:
             # Log full traceback for debugging
-            import traceback
-
-            logger.error(f"TTS failed: {tts_error}")
-            logger.error(f"Full traceback:\n{traceback.format_exc()}")
+            logger.exception(f"TTS failed: {tts_error}")
 
             # Fatal TTS errors (model load failure) vs transient (API timeout)
             error_type = "fatal_error" if is_fatal_error(tts_error) else "tts_failed"
@@ -467,7 +469,7 @@ async def process_voice(request: Request) -> Response:
     except Exception as e:
         # Determine if this is a fatal error (needs manual fix) or transient
         error_type = "fatal_error" if is_fatal_error(e) else "general_error"
-        logger.error(f"Error processing voice ({error_type}): {e}")
+        logger.exception(f"Error processing voice ({error_type}): {e}")
 
         error_sound = get_error_sound(error_type, audio_format)
         if error_sound:
@@ -553,7 +555,7 @@ async def chat(request: ChatRequest) -> StreamingResponse:
                     )
                     yield f"event: done\ndata: {json.dumps({'conversation_id': conversation_id})}\n\n"
         except Exception as e:
-            logger.error(f"Error in chat stream: {e}")
+            logger.exception(f"Error in chat stream: {e}")
             yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
 
     return StreamingResponse(
@@ -586,9 +588,7 @@ async def get_conversations() -> list[dict[str, str]]:
 
                 if conversation_id and date:
                     # Get preview from Claude's JSONL conversation file
-                    project_hash = (
-                        "-home-kevin-coding-voice-agent"  # TODO: make this configurable
-                    )
+                    project_hash = get_claude_project_hash(PROJECT_DIR)
                     jsonl_file = (
                         Path.home()
                         / ".claude"
@@ -647,7 +647,7 @@ async def get_conversations() -> list[dict[str, str]]:
 async def get_conversation(conversation_id: str) -> dict[str, str | list]:
     """Get full conversation by ID."""
     # Read from Claude's native JSONL format
-    project_hash = "-home-kevin-coding-voice-agent"  # TODO: make this configurable
+    project_hash = get_claude_project_hash(PROJECT_DIR)
     jsonl_file = (
         Path.home()
         / ".claude"

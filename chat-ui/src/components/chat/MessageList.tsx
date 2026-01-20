@@ -19,11 +19,10 @@ interface MessageListProps {
 
 export function MessageList({ messages, streamingContent, isStreaming }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const shouldAutoScroll = useRef(true)
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
-    if (shouldAutoScroll.current && scrollRef.current) {
+    if (scrollRef.current) {
       const scrollContainer = scrollRef.current.querySelector('[data-radix-scroll-area-viewport]')
       if (scrollContainer) {
         scrollContainer.scrollTop = scrollContainer.scrollHeight
