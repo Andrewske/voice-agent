@@ -1,6 +1,7 @@
 """FastAPI voice agent server."""
 
 import atexit
+import json
 import signal
 import tempfile
 import logging
@@ -10,13 +11,24 @@ from pathlib import Path
 from typing import AsyncIterator
 
 from fastapi import FastAPI, UploadFile, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
+from pydantic import BaseModel
 
 import asyncio
 
-from voice_agent.transcribe import transcribe, unload_model as unload_transcribe_model, set_hotwords
+from voice_agent.transcribe import (
+    transcribe,
+    unload_model as unload_transcribe_model,
+    set_hotwords,
+)
 from voice_agent.claude import ask_claude, clear_conversation, get_context_usage
-from voice_agent.tts import synthesize, warm_model, get_audio_media_type, get_output_format, unload_model as unload_tts_model
+from voice_agent.tts import (
+    synthesize,
+    warm_model,
+    get_audio_media_type,
+    get_output_format,
+    unload_model as unload_tts_model,
+)
 from voice_agent.audio import prepend_notification, get_error_sound, get_success_chime
 from voice_agent.agents import (
     load_agents_config,
@@ -27,9 +39,18 @@ from voice_agent.agents import (
     save_last_command,
     get_last_command,
     clear_last_command,
-    VoiceAgentConfig,
 )
 from voice_agent.commands import execute_command, undo_last
+
+
+# Pydantic models for API endpoints
+class ChatRequest(BaseModel):
+    message: str
+
+
+class AgentSwitchRequest(BaseModel):
+    agent: str
+
 
 # Phrases that trigger conversation reset
 RESET_PHRASES = ["new conversation", "start fresh", "reset conversation"]
@@ -158,6 +179,7 @@ def log_conversation(
     assistant_text: str,
     thinking_text: str = "",
     conversations_dir: Path | None = None,
+    source: str = "",
 ) -> None:
     """Append conversation to today's log file."""
     if conversations_dir is None:
@@ -168,7 +190,8 @@ def log_conversation(
     log_file = conversations_dir / f"{today}.md"
 
     timestamp = datetime.now().strftime("%H:%M")
-    entry = f"\n## {timestamp}\n**Kevin:** {user_text}\n\n"
+    marker = f" [{source}]" if source else ""
+    entry = f"\n## {timestamp}{marker}\n**Kevin:** {user_text}\n\n"
     if thinking_text:
         entry += f"**Agent thinking:** {thinking_text}\n\n"
     entry += f"**Agent:** {assistant_text}\n"
@@ -258,25 +281,35 @@ async def process_voice(request: Request) -> Response:
 
             # Handle commands
             if command_name:
-                cmd_config = get_command_for_agent(command_name, current_agent_name, CONFIG)
+                cmd_config = get_command_for_agent(
+                    command_name, current_agent_name, CONFIG
+                )
 
                 if cmd_config is None:
                     # Command not available for this agent - return crickets
-                    logger.warning(f"Command '{command_name}' not available for agent '{current_agent_name}'")
+                    logger.warning(
+                        f"Command '{command_name}' not available for agent '{current_agent_name}'"
+                    )
                     error_sound = get_error_sound("empty_transcription", audio_format)
                     if error_sound:
-                        return Response(content=error_sound, media_type=get_audio_media_type())
+                        return Response(
+                            content=error_sound, media_type=get_audio_media_type()
+                        )
 
                 # Handle special commands
                 if command_name == "undo":
                     last = get_last_command()
                     if last:
-                        undo_last(last["command"], Path(last.get("agent_path", str(cwd))))
+                        undo_last(
+                            last["command"], Path(last.get("agent_path", str(cwd)))
+                        )
                         clear_last_command()
                     chime = get_success_chime(audio_format)
                     if chime:
                         log_conversation(user_text, "[undo]", "", conversations_dir)
-                        return Response(content=chime, media_type=get_audio_media_type())
+                        return Response(
+                            content=chime, media_type=get_audio_media_type()
+                        )
 
                 elif command_name == "repeat":
                     # Find last agent response from conversation log
@@ -289,7 +322,14 @@ async def process_voice(request: Request) -> Response:
                             content = f.read()
                             # Find all "**Agent:**" entries
                             import re
-                            matches = list(re.finditer(r'\*\*Agent:\*\* (.+?)(?=\n## |\n\*\*Agent thinking:\*\*|\Z)', content, re.DOTALL))
+
+                            matches = list(
+                                re.finditer(
+                                    r"\*\*Agent:\*\* (.+?)(?=\n## |\n\*\*Agent thinking:\*\*|\Z)",
+                                    content,
+                                    re.DOTALL,
+                                )
+                            )
                             if matches:
                                 last_agent_response = matches[-1].group(1).strip()
 
@@ -298,35 +338,53 @@ async def process_voice(request: Request) -> Response:
                         audio_bytes = await synthesize(last_agent_response)
                         audio_bytes = prepend_notification(audio_bytes, audio_format)
                         log_conversation(user_text, "[repeated]", "", conversations_dir)
-                        return Response(content=audio_bytes, media_type=get_audio_media_type())
+                        return Response(
+                            content=audio_bytes, media_type=get_audio_media_type()
+                        )
                     else:
                         # Nothing to repeat - crickets
-                        error_sound = get_error_sound("empty_transcription", audio_format)
+                        error_sound = get_error_sound(
+                            "empty_transcription", audio_format
+                        )
                         if error_sound:
-                            return Response(content=error_sound, media_type=get_audio_media_type())
+                            return Response(
+                                content=error_sound, media_type=get_audio_media_type()
+                            )
 
                 else:
                     # Regular command (log, listen, etc.)
                     if not message.strip():
                         # No message provided - return crickets
                         logger.warning(f"Command '{command_name}' with no message")
-                        error_sound = get_error_sound("empty_transcription", audio_format)
+                        error_sound = get_error_sound(
+                            "empty_transcription", audio_format
+                        )
                         if error_sound:
-                            return Response(content=error_sound, media_type=get_audio_media_type())
+                            return Response(
+                                content=error_sound, media_type=get_audio_media_type()
+                            )
 
                     # Execute the command
                     success = execute_command(command_name, message, cwd)
 
-                    if success and cmd_config.silent:
+                    if success and cmd_config and cmd_config.silent:
                         # Save for undo/repeat
-                        save_last_command(current_agent_name, command_name, message, cwd)
+                        save_last_command(
+                            current_agent_name, command_name, message, cwd
+                        )
                         # Return just the chime
                         chime = get_success_chime(audio_format)
                         if chime:
-                            log_conversation(user_text, f"[{command_name}]", "", conversations_dir)
-                            return Response(content=chime, media_type=get_audio_media_type())
+                            log_conversation(
+                                user_text, f"[{command_name}]", "", conversations_dir
+                            )
+                            return Response(
+                                content=chime, media_type=get_audio_media_type()
+                            )
                         # Silent command succeeded but no chime available - return empty response
-                        log_conversation(user_text, f"[{command_name}]", "", conversations_dir)
+                        log_conversation(
+                            user_text, f"[{command_name}]", "", conversations_dir
+                        )
                         return Response(content=b"", media_type=get_audio_media_type())
 
                     # Non-silent command or failed - continue to Claude
@@ -360,6 +418,7 @@ async def process_voice(request: Request) -> Response:
             assistant_text = "I'm here. What would you like to discuss?"
         else:
             import time
+
             logger.info("Getting Claude response...")
             start_time = time.time()
             # Pass agent name for memory scoping (None becomes "default")
@@ -379,13 +438,15 @@ async def process_voice(request: Request) -> Response:
         try:
             # Strip markdown formatting for spoken output
             import re
-            speech_text = re.sub(r'\*+', '', assistant_text)  # Remove asterisks
-            speech_text = re.sub(r'_+', '', speech_text)       # Remove underscores
-            speech_text = re.sub(r'`+', '', speech_text)       # Remove backticks
+
+            speech_text = re.sub(r"\*+", "", assistant_text)  # Remove asterisks
+            speech_text = re.sub(r"_+", "", speech_text)  # Remove underscores
+            speech_text = re.sub(r"`+", "", speech_text)  # Remove backticks
             audio_bytes = await synthesize(speech_text)
         except Exception as tts_error:
             # Log full traceback for debugging
             import traceback
+
             logger.error(f"TTS failed: {tts_error}")
             logger.error(f"Full traceback:\n{traceback.format_exc()}")
 
@@ -438,3 +499,275 @@ async def tts_only(text: str) -> Response:
     """Debug endpoint: generate speech without transcription/Claude."""
     audio_bytes = await synthesize(text)
     return Response(content=audio_bytes, media_type=get_audio_media_type())
+
+
+@app.post("/api/chat")
+async def chat(request: ChatRequest) -> StreamingResponse:
+    """Stream Claude chat response via SSE."""
+    from voice_agent.claude import stream_claude
+
+    # Load current agent
+    current_agent_name = load_current_agent()
+
+    # Get agent config
+    if current_agent_name and current_agent_name in CONFIG.agents:
+        agent_config = CONFIG.agents[current_agent_name]
+        cwd = agent_config.path
+        conversations_dir = agent_config.path / "conversations"
+        agent_for_memory = current_agent_name
+    else:
+        cwd = PROJECT_DIR
+        conversations_dir = DEFAULT_CONVERSATIONS_DIR
+        agent_for_memory = "default"
+
+    # Collect full response for logging
+    full_response = []
+    full_thinking = []
+    final_conversation_id = ""
+
+    async def generate_events():
+        """Generate SSE events from Claude stream."""
+        nonlocal final_conversation_id
+        try:
+            async for event_type, content, conversation_id in stream_claude(
+                request.message,
+                cwd=cwd,
+                conversations_dir=conversations_dir,
+                agent=agent_for_memory,
+            ):
+                if event_type == "thinking":
+                    full_thinking.append(content)
+                    yield f"event: {event_type}\ndata: {json.dumps({'content': content, 'conversation_id': conversation_id})}\n\n"
+                elif event_type == "text":
+                    full_response.append(content)
+                    yield f"event: {event_type}\ndata: {json.dumps({'content': content, 'conversation_id': conversation_id})}\n\n"
+                elif event_type == "done":
+                    final_conversation_id = conversation_id
+                    # Log the complete conversation
+                    log_conversation(
+                        request.message,
+                        "\n".join(full_response),
+                        "\n".join(full_thinking),
+                        conversations_dir,
+                        source="chat",
+                    )
+                    yield f"event: done\ndata: {json.dumps({'conversation_id': conversation_id})}\n\n"
+        except Exception as e:
+            logger.error(f"Error in chat stream: {e}")
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        generate_events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
+
+
+@app.get("/api/conversations")
+async def get_conversations() -> list[dict[str, str]]:
+    """Get list of conversations with IDs, dates, and previews."""
+    # Load current agent
+    current_agent_name = load_current_agent()
+
+    # Get conversations directory
+    if current_agent_name and current_agent_name in CONFIG.agents:
+        conversations_dir = CONFIG.agents[current_agent_name].path / "conversations"
+    else:
+        conversations_dir = DEFAULT_CONVERSATIONS_DIR
+
+    conversations = []
+    if conversations_dir.exists():
+        # Look for session files to get conversation IDs and dates
+        for session_file in conversations_dir.glob("*.claude-session.json"):
+            try:
+                data = json.loads(session_file.read_text())
+                conversation_id = data.get("conversation_id")
+                date = data.get("date")
+
+                if conversation_id and date:
+                    # Get preview from Claude's JSONL conversation file
+                    project_hash = (
+                        "-home-kevin-coding-voice-agent"  # TODO: make this configurable
+                    )
+                    jsonl_file = (
+                        Path.home()
+                        / ".claude"
+                        / "projects"
+                        / project_hash
+                        / "conversations"
+                        / f"{conversation_id}.jsonl"
+                    )
+                    preview = ""
+                    if jsonl_file.exists():
+                        try:
+                            with open(jsonl_file, "r") as f:
+                                lines = f.readlines()
+                                # Find the last user message
+                                for line in reversed(lines):
+                                    if line.strip():
+                                        msg = json.loads(line)
+                                        if msg.get("type") == "user" and msg.get(
+                                            "message"
+                                        ):
+                                            content = msg["message"]
+                                            if isinstance(content, list):
+                                                # Handle content as list of blocks
+                                                for block in content:
+                                                    if block.get("type") == "text":
+                                                        preview = block.get(
+                                                            "text", ""
+                                                        ).strip()[:100]
+                                                        break
+                                            elif isinstance(
+                                                content, dict
+                                            ) and content.get("content"):
+                                                # Handle content as dict
+                                                preview = content.get(
+                                                    "content", ""
+                                                ).strip()[:100]
+                                            else:
+                                                # Handle content as string
+                                                preview = str(content).strip()[:100]
+                                            break
+                        except (json.JSONDecodeError, OSError):
+                            pass
+
+                    conversations.append(
+                        {"id": conversation_id, "date": date, "preview": preview}
+                    )
+            except (json.JSONDecodeError, OSError):
+                continue
+
+    # Sort by date descending
+    conversations.sort(key=lambda x: x["date"], reverse=True)
+    return conversations
+
+
+@app.get("/api/conversations/{conversation_id}")
+async def get_conversation(conversation_id: str) -> dict[str, str | list]:
+    """Get full conversation by ID."""
+    # Read from Claude's native JSONL format
+    project_hash = "-home-kevin-coding-voice-agent"  # TODO: make this configurable
+    jsonl_file = (
+        Path.home()
+        / ".claude"
+        / "projects"
+        / project_hash
+        / "conversations"
+        / f"{conversation_id}.jsonl"
+    )
+
+    if not jsonl_file.exists():
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    messages = []
+    try:
+        with open(jsonl_file, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line)
+
+                    # Extract user messages
+                    if msg.get("type") == "user" and msg.get("message"):
+                        content = msg["message"]
+                        user_text = ""
+                        if isinstance(content, list):
+                            # Handle content as list of blocks
+                            for block in content:
+                                if block.get("type") == "text":
+                                    user_text = block.get("text", "").strip()
+                                    break
+                        elif isinstance(content, dict) and content.get("content"):
+                            # Handle content as dict
+                            user_text = content.get("content", "").strip()
+                        else:
+                            # Handle content as string
+                            user_text = str(content).strip()
+
+                        if user_text:
+                            messages.append({"role": "user", "content": user_text})
+
+                    # Extract assistant messages
+                    elif msg.get("type") == "assistant" and msg.get("message"):
+                        content = msg["message"]
+                        assistant_text = ""
+                        thinking_text = ""
+
+                        if isinstance(content, list):
+                            # Handle content as list of blocks
+                            for block in content:
+                                if block.get("type") == "thinking":
+                                    thinking_text = block.get("thinking", "").strip()
+                                elif block.get("type") == "text":
+                                    assistant_text = block.get("text", "").strip()
+                        elif isinstance(content, dict):
+                            # Handle content as dict
+                            assistant_text = content.get("content", "").strip()
+
+                        if assistant_text or thinking_text:
+                            messages.append(
+                                {
+                                    "role": "assistant",
+                                    "content": assistant_text,
+                                    "thinking": thinking_text,
+                                }
+                            )
+
+                except json.JSONDecodeError:
+                    continue
+
+    except OSError:
+        raise HTTPException(status_code=500, detail="Error reading conversation")
+
+    return {"id": conversation_id, "messages": messages}
+
+
+@app.get("/api/agents")
+async def get_agents() -> list[dict[str, str | bool]]:
+    """Get list of agents with active status."""
+    current_agent = load_current_agent()
+    agents = []
+
+    for name, config in CONFIG.agents.items():
+        agents.append({"name": name, "active": name == current_agent})
+
+    # Add default agent
+    agents.append({"name": "default", "active": current_agent is None})
+
+    return agents
+
+
+@app.post("/api/agents/switch")
+async def switch_agent(request: AgentSwitchRequest) -> dict[str, str]:
+    """Switch active agent."""
+    agent_name = request.agent
+
+    # Validate agent exists
+    if agent_name != "default" and agent_name not in CONFIG.agents:
+        raise HTTPException(status_code=400, detail=f"Agent '{agent_name}' not found")
+
+    # Switch agent
+    save_current_agent(agent_name if agent_name != "default" else None)
+
+    return {"message": f"Switched to agent '{agent_name}'"}
+
+
+@app.post("/reload-config")
+async def reload_config() -> dict:
+    """Reload configuration from voice-agent-config.yaml."""
+    global CONFIG
+    try:
+        CONFIG = load_agents_config()
+        set_hotwords(CONFIG)
+        return {
+            "status": "ok",
+            "agents": len(CONFIG.agents),
+            "commands": len(CONFIG.commands),
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to reload config: {str(e)}"
+        )
