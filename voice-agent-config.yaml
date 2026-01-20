@@ -9,6 +9,12 @@ keywords:
   - career
   - daily
   - video games
+  - learning
+  - medium
+  - podcast
+  - project tracker
+  - task
+  - youtube
   - log
   - listen
   - undo
@@ -52,3 +58,21 @@ agents:
 
   video-games:
     path: "~/journal/agents/video-games"
+
+  learning:
+    path: "~/journal/agents/learning"
+
+  medium:
+    path: "~/journal/agents/medium"
+
+  podcast:
+    path: "~/journal/agents/podcast"
+
+  project-tracker:
+    path: "~/journal/agents/project-tracker"
+
+  task:
+    path: "~/journal/agents/task"
+
+  youtube:
+    path: "~/journal/agents/youtube"

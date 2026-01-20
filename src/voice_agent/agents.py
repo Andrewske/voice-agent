@@ -123,6 +123,21 @@ def extract_keywords_from_window(
         "message": text,
     }
 
+    # Check for standalone commands first (commands without "agent" keyword)
+    for cmd_name, cmd in config.commands.items():
+        all_names = [cmd_name] + cmd.aliases
+        for name in all_names:
+            if name in window:
+                result["has_agent_keyword"] = True
+                result["command"] = cmd_name
+                # Extract message after command
+                for i, word in enumerate(words[:window_size]):
+                    if word == name:
+                        message_start = i + 1
+                        result["message"] = " ".join(words[message_start:])
+                        return result
+                return result
+
     # Check for "agent" keyword
     if "agent" not in window:
         return result

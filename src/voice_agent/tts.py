@@ -67,6 +67,14 @@ def _init_providers() -> None:
         except ImportError as e:
             logger.warning(f"Kokoro not available: {e}. Falling back to API.")
             _primary = None
+    elif provider_name == "chatterbox":
+        try:
+            from voice_agent import tts_chatterbox
+            _primary = tts_chatterbox.synthesize
+            logger.info("Chatterbox TTS loaded as primary")
+        except ImportError as e:
+            logger.warning(f"Chatterbox not available: {e}. Falling back to API.")
+            _primary = None
     elif provider_name == "api":
         _primary = None  # Will use fallback directly
     else:
@@ -138,6 +146,12 @@ def _get_provider_format() -> str:
             return "ogg"
         except ImportError:
             pass
+    elif provider_name == "chatterbox":
+        try:
+            import chatterbox  # noqa: F401
+            return "ogg"
+        except ImportError:
+            pass
 
     return "mp3"
 
@@ -158,6 +172,13 @@ async def warm_model() -> None:
             logger.info("TTS model warmed")
         except ImportError:
             pass  # Kokoro not installed, nothing to warm
+    elif provider_name == "chatterbox":
+        try:
+            from voice_agent import tts_chatterbox
+            tts_chatterbox.load_model()
+            logger.info("TTS model warmed")
+        except ImportError:
+            pass  # Chatterbox not installed, nothing to warm
 
 
 def unload_model() -> None:
@@ -169,6 +190,12 @@ def unload_model() -> None:
         try:
             from voice_agent import tts_kokoro
             tts_kokoro.unload_model()
+        except ImportError:
+            pass
+    elif provider_name == "chatterbox":
+        try:
+            from voice_agent import tts_chatterbox
+            tts_chatterbox.unload_model()
         except ImportError:
             pass
 

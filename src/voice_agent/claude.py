@@ -105,7 +105,7 @@ def get_context_usage(conversations_dir: Path | None = None) -> str:
 
 def ask_claude(
     prompt: str,
-    timeout: int = 120,
+    timeout: int = 90,
     cwd: Path | None = None,
     conversations_dir: Path | None = None,
     agent: str = "default",

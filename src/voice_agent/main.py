@@ -83,8 +83,16 @@ def is_fatal_error(error: Exception) -> bool:
     return False
 
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
+# Setup logging - both console and file
+LOG_FILE = Path(__file__).parent.parent.parent / "voice-agent.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(LOG_FILE),
+    ],
+)
 logger = logging.getLogger(__name__)
 
 # Track if cleanup has run to avoid double-cleanup
@@ -271,11 +279,26 @@ async def process_voice(request: Request) -> Response:
                         return Response(content=chime, media_type=get_audio_media_type())
 
                 elif command_name == "repeat":
-                    last = get_last_command()
-                    if last and last.get("message"):
-                        # Re-send to Claude with the last message
-                        user_text = last["message"]
-                        # Fall through to Claude processing
+                    # Find last agent response from conversation log
+                    today = datetime.now().strftime("%Y-%m-%d")
+                    log_file = conversations_dir / f"{today}.md"
+
+                    last_agent_response = None
+                    if log_file.exists():
+                        with open(log_file, "r") as f:
+                            content = f.read()
+                            # Find all "**Agent:**" entries
+                            import re
+                            matches = list(re.finditer(r'\*\*Agent:\*\* (.+?)(?=\n## |\n\*\*Agent thinking:\*\*|\Z)', content, re.DOTALL))
+                            if matches:
+                                last_agent_response = matches[-1].group(1).strip()
+
+                    if last_agent_response:
+                        # Convert text to speech and return
+                        audio_bytes = await synthesize(last_agent_response)
+                        audio_bytes = prepend_notification(audio_bytes, audio_format)
+                        log_conversation(user_text, "[repeated]", "", conversations_dir)
+                        return Response(content=audio_bytes, media_type=get_audio_media_type())
                     else:
                         # Nothing to repeat - crickets
                         error_sound = get_error_sound("empty_transcription", audio_format)
@@ -336,7 +359,9 @@ async def process_voice(request: Request) -> Response:
             # Handle case where trigger phrase was the entire message
             assistant_text = "I'm here. What would you like to discuss?"
         else:
+            import time
             logger.info("Getting Claude response...")
+            start_time = time.time()
             # Pass agent name for memory scoping (None becomes "default")
             agent_for_memory = current_agent_name or "default"
             assistant_text, thinking_text = ask_claude(
@@ -345,16 +370,27 @@ async def process_voice(request: Request) -> Response:
                 conversations_dir=conversations_dir,
                 agent=agent_for_memory,
             )
+            elapsed = time.time() - start_time
+            logger.info(f"Claude responded in {elapsed:.1f}s")
             logger.info(f"Response: {assistant_text}")
 
         # Synthesize speech
         logger.info("Synthesizing speech...")
         try:
-            audio_bytes = await synthesize(assistant_text)
+            # Strip markdown formatting for spoken output
+            import re
+            speech_text = re.sub(r'\*+', '', assistant_text)  # Remove asterisks
+            speech_text = re.sub(r'_+', '', speech_text)       # Remove underscores
+            speech_text = re.sub(r'`+', '', speech_text)       # Remove backticks
+            audio_bytes = await synthesize(speech_text)
         except Exception as tts_error:
+            # Log full traceback for debugging
+            import traceback
+            logger.error(f"TTS failed: {tts_error}")
+            logger.error(f"Full traceback:\n{traceback.format_exc()}")
+
             # Fatal TTS errors (model load failure) vs transient (API timeout)
             error_type = "fatal_error" if is_fatal_error(tts_error) else "tts_failed"
-            logger.error(f"TTS failed ({error_type}): {tts_error}")
             error_sound = get_error_sound(error_type, audio_format)
             if error_sound:
                 return Response(content=error_sound, media_type=get_audio_media_type())

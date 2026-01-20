@@ -3,8 +3,10 @@ name = "voice-agent"
 version = "0.1.0"
 description = "Claude Code powered voice assistant"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11,<3.13"
 dependencies = [
+    "chatterbox-tts>=0.1",
+    "ml-dtypes>=0.5",  # Required for onnx 1.19+ compatibility
     "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
     "faster-whisper>=1.0",
     "fastapi>=0.124.0",
