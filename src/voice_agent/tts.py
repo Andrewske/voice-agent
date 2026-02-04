@@ -40,7 +40,7 @@ def _convert_audio(audio_bytes: bytes, from_format: str, to_format: str) -> byte
     return result.stdout
 
 # Type for TTS synthesize functions
-SynthesizeFunc = Callable[[str], Awaitable[bytes]]
+SynthesizeFunc = Callable[..., Awaitable[bytes]]
 
 # Lazy-loaded providers
 _primary: SynthesizeFunc | None = None
@@ -93,12 +93,16 @@ def _init_providers() -> None:
     _initialized = True
 
 
-async def synthesize(text: str) -> bytes:
+async def synthesize(text: str, voice: str | None = None) -> bytes:
     """
     Convert text to speech.
 
     Uses primary provider, falls back to API on failure.
     Returns audio bytes in configured AUDIO_OUTPUT_FORMAT.
+
+    Args:
+        text: Text to synthesize
+        voice: Optional voice override (e.g., "bm_lewis"). Falls back to env var.
     """
     _init_providers()
 
@@ -108,11 +112,11 @@ async def synthesize(text: str) -> bytes:
 
     try:
         if _primary:
-            audio = await _primary(text)
+            audio = await _primary(text, voice=voice)
     except Exception as e:
         if _fallback:
             logger.warning(f"Primary TTS failed ({e}), using fallback")
-            audio = await _fallback(text)
+            audio = await _fallback(text)  # Fallback doesn't support voice override
             provider_format = "mp3"  # Fallback is always API which returns MP3
             used_fallback = True
         else:

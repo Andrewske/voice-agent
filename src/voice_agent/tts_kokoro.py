@@ -11,28 +11,51 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_pipeline: "KPipeline | None" = None
+_pipelines: dict[str, "KPipeline"] = {}
 
 
-def load_model() -> "KPipeline":
-    """Load the Kokoro TTS pipeline. Called once lazily."""
-    global _pipeline
+def _get_lang_code_for_voice(voice: str) -> str:
+    """Determine Kokoro lang_code from voice prefix."""
+    prefix = voice[:2] if len(voice) >= 2 else "af"
+    lang_map = {
+        "af": "a",  # American female
+        "am": "a",  # American male
+        "bf": "b",  # British female
+        "bm": "b",  # British male
+        "ef": "a",  # English (defaults to American)
+        "em": "a",
+        "jf": "j",  # Japanese
+        "jm": "j",
+        "zf": "z",  # Chinese
+        "zm": "z",
+        "ff": "f",  # French
+        "hf": "h",  # Hindi
+        "hm": "h",
+        "if": "h",  # Indian (uses Hindi model)
+        "im": "h",
+        "pf": "p",  # Portuguese
+        "pm": "p",
+    }
+    return lang_map.get(prefix, "a")
 
-    if _pipeline is not None:
-        return _pipeline
+
+def load_model(lang_code: str = "a") -> "KPipeline":
+    """Load the Kokoro TTS pipeline for a given lang_code. Cached per lang_code."""
+    global _pipelines
+
+    if lang_code in _pipelines:
+        return _pipelines[lang_code]
 
     from kokoro import KPipeline
 
-    lang_code = os.getenv("KOKORO_LANG", "a")  # 'a' = American English
-
     logger.info(f"Loading Kokoro TTS (lang={lang_code})...")
     try:
-        _pipeline = KPipeline(lang_code=lang_code, repo_id="hexgrad/Kokoro-82M")
+        _pipelines[lang_code] = KPipeline(lang_code=lang_code, repo_id="hexgrad/Kokoro-82M")
     except Exception as e:
         raise RuntimeError(f"Failed to load Kokoro TTS model: {e}") from e
-    logger.info("Kokoro TTS model loaded")
+    logger.info(f"Kokoro TTS model loaded (lang={lang_code})")
 
-    return _pipeline
+    return _pipelines[lang_code]
 
 
 def _wav_to_opus(wav_bytes: bytes) -> bytes:
@@ -55,13 +78,12 @@ def _wav_to_opus(wav_bytes: bytes) -> bytes:
 
 
 def unload_model() -> None:
-    """Unload Kokoro TTS model to free resources."""
-    global _pipeline
+    """Unload all Kokoro TTS models to free resources."""
+    global _pipelines
 
-    if _pipeline is not None:
-        logger.info("Unloading Kokoro TTS model...")
-        del _pipeline
-        _pipeline = None
+    if _pipelines:
+        logger.info(f"Unloading Kokoro TTS models ({len(_pipelines)} pipelines)...")
+        _pipelines.clear()
 
         # Force garbage collection to release CUDA/PyTorch memory
         import gc
@@ -75,18 +97,22 @@ def unload_model() -> None:
             pass
 
 
-async def synthesize(text: str) -> bytes:
+async def synthesize(text: str, voice: str | None = None) -> bytes:
     """
     Convert text to speech using Kokoro.
+
+    Args:
+        text: Text to synthesize
+        voice: Optional voice override. Falls back to KOKORO_VOICE env var.
 
     Returns: Opus audio bytes (in Ogg container).
     """
     import numpy as np
     import soundfile as sf
 
-    pipeline = load_model()
-
-    voice = os.getenv("KOKORO_VOICE", "af_heart")
+    voice = voice or os.getenv("KOKORO_VOICE", "af_heart")
+    lang_code = _get_lang_code_for_voice(voice)
+    pipeline = load_model(lang_code)
     speed = float(os.getenv("KOKORO_SPEED", "1.0"))
 
     # Generate audio segments

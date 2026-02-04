@@ -34,6 +34,7 @@ class AgentConfig:
     name: str
     path: Path
     triggers: list[str] = field(default_factory=list)
+    voice: str | None = None  # TTS voice override (e.g., "bm_lewis")
 
 
 @dataclass
@@ -82,7 +83,8 @@ def load_agents_config() -> VoiceAgentConfig:
         if "-" in name:
             triggers.append(f"{name.replace('-', ' ')} agent")
 
-        agents[name] = AgentConfig(name=name, path=path, triggers=triggers)
+        voice = data.get("voice")  # Optional TTS voice override
+        agents[name] = AgentConfig(name=name, path=path, triggers=triggers, voice=voice)
 
     return VoiceAgentConfig(keywords=keywords, commands=commands, agents=agents)
 
