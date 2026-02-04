@@ -1,0 +1,16 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install minimal dependencies (no ML)
+RUN apt-get update && apt-get install -y --no-install-recommends wakeonlan && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir fastapi uvicorn httpx
+
+# Copy only what's needed
+COPY src/voice_agent/proxy.py src/voice_agent/
+RUN mkdir -p src/voice_agent && touch src/voice_agent/__init__.py
+COPY chat-ui/dist/ chat-ui/dist/
+
+EXPOSE 8001
+
+CMD ["uvicorn", "src.voice_agent.proxy:app", "--host", "0.0.0.0", "--port", "8001"]

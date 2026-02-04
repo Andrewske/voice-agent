@@ -1,0 +1,15 @@
+services:
+  voice-agent-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.proxy
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - PC_HOST=${PC_HOST:-100.108.111.65}
+      - PC_PORT=${PC_PORT:-8000}
+      - PC_MAC=${PC_MAC:-d8:43:ae:f9:9f:36}
+      - CONVERSATIONS_DIR=/data/conversations
+    volumes:
+      # Mount synced conversations folder (via Syncthing)
+      - ${CONVERSATIONS_DIR:-/home/kevin/voice-agent/conversations}:/data/conversations:ro
