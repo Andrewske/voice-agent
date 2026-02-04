@@ -15,17 +15,21 @@ keywords:
   - project tracker
   - task
   - youtube
+  - historian
+  - business partner
   - log
   - listen
   - undo
   - repeat
+  - research
+  - investigate
 
 # Commands with agent allowlists (empty = universal)
 commands:
   log:
     agents: [diet]
     silent: true
-    aliases: [add, record]
+    aliases: [record]
   listen:
     agents: []
     silent: true
@@ -38,6 +42,10 @@ commands:
     agents: []
     silent: false
     aliases: [again, replay]
+  research:
+    agents: []
+    silent: false
+    aliases: [investigate, look up, find out]
 
 # Agent definitions - triggers auto-generated as "{name} agent"
 agents:
@@ -76,3 +84,10 @@ agents:
 
   youtube:
     path: "~/journal/agents/youtube"
+
+  historian:
+    path: "~/journal/agents/historian"
+    voice: "bm_lewis"
+
+  business-partner:
+    path: "~/journal/agents/business-partner"

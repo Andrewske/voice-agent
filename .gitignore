@@ -5,7 +5,7 @@ __pycache__/
 .venv/
 *.mp3
 *.wav
-*.m4a
-conversations/
-context/
+
+# conversations/
+# context/
 .uv/
