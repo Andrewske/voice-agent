@@ -1,0 +1,14 @@
+[Unit]
+Description=Voice Agent Backend
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/kevin/coding/voice-agent
+ExecStart=/usr/bin/uv run uvicorn src.voice_agent.main:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=5
+Environment=PATH=/home/kevin/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target
