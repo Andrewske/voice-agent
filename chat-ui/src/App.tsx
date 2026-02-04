@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Header } from '@/components/layout/Header'
+import { Sidebar } from '@/components/layout/Sidebar'
 import { MessageList, type MessageData } from '@/components/chat/MessageList'
 import { ChatInput } from '@/components/chat/ChatInput'
 import { useChat } from '@/hooks/useChat'
@@ -12,7 +13,8 @@ function App() {
 
   const { agents, activeAgent, switchAgent } = useAgents()
   const [historicalMessages, setHistoricalMessages] = useState<MessageData[] | null>(null)
-  const { loadConversation } = useConversations()
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const { loadConversation, refresh: refreshConversations } = useConversations()
 
   const {
     messages,
@@ -21,7 +23,9 @@ function App() {
     streamingThinking,
     currentAgent,
     sendMessage,
+    sendAudioMessage,
     startNewSession,
+    loadMessages,
   } = useChat(activeAgent || 'default')
 
   // Use historical messages if viewing history, otherwise active chat
@@ -35,7 +39,9 @@ function App() {
 
   const handleAgentSwitch = async (agentName: string) => {
     try {
+      setHistoricalMessages(null) // Clear historical view when switching agents
       await switchAgent(agentName)
+      await refreshConversations()
     } catch (error) {
       console.error('Failed to switch agent:', error)
     }
@@ -46,7 +52,7 @@ function App() {
     setHistoricalMessages(null)
   }
 
-  const handleSelectConversation = async (conversationId: string) => {
+  const handleSelectConversation = async (conversationId: string, date: string) => {
     const conversation = await loadConversation(conversationId)
     if (conversation) {
       // Convert conversation messages to MessageData format
@@ -55,28 +61,50 @@ function App() {
         content: msg.content,
         thinking: msg.thinking,
       }))
-      setHistoricalMessages(converted)
+
+      // Check if this is today's conversation
+      const today = new Date()
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+
+      if (date === todayStr) {
+        // Today's conversation - load into active chat so user can continue
+        loadMessages(converted)
+        setHistoricalMessages(null)
+      } else {
+        // Historical conversation - view only
+        setHistoricalMessages(converted)
+      }
     }
   }
 
   return (
-    <div className="h-dvh flex flex-col bg-slate-900 text-slate-100">
-      <Header
-        activeAgent={activeAgent}
-        agents={agents}
-        onAgentSwitch={handleAgentSwitch}
-        onNewChat={handleNewChat}
+    <div className="h-dvh flex bg-background text-foreground">
+      <Sidebar
+        isOpen={sidebarOpen}
         onSelectConversation={handleSelectConversation}
+        activeAgent={activeAgent}
       />
-      <MessageList
-        messages={displayMessages}
-        streamingContent={streamingContent}
-        isStreaming={isStreaming}
-      />
-      <ChatInput
-        onSend={sendMessage}
-        disabled={isStreaming || isViewingHistory}
-      />
+      <div className="flex-1 flex flex-col min-w-0">
+        <Header
+          onNewChat={handleNewChat}
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+          activeAgent={activeAgent}
+        />
+        <MessageList
+          messages={displayMessages}
+          streamingContent={streamingContent}
+          isStreaming={isStreaming}
+        />
+        <ChatInput
+          onSend={sendMessage}
+          onSendAudio={sendAudioMessage}
+          disabled={isStreaming || isViewingHistory}
+          activeAgent={activeAgent}
+          agents={agents}
+          onAgentSwitch={handleAgentSwitch}
+        />
+      </div>
     </div>
   )
 }
