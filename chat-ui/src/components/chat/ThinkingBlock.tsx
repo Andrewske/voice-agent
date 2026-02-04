@@ -23,13 +23,13 @@ export function ThinkingBlock({ content, isStreaming = false }: ThinkingBlockPro
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen} className="mt-2">
-      <CollapsibleTrigger className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-400 transition-colors">
+      <CollapsibleTrigger className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
         <ChevronDown
           className={`h-3 w-3 transition-transform ${isOpen ? 'rotate-0' : '-rotate-90'}`}
         />
         <span className="italic">Thinking...</span>
       </CollapsibleTrigger>
-      <CollapsibleContent className="mt-1 text-sm text-slate-400 italic pl-4 border-l-2 border-slate-700">
+      <CollapsibleContent className="mt-1 text-sm text-zinc-500 italic pl-4 border-l-2 border-zinc-700">
         {content}
       </CollapsibleContent>
     </Collapsible>
