@@ -9,13 +9,13 @@ from pathlib import Path
 from typing import AsyncGenerator
 
 from voice_agent.agents import load_voice_mode_prompt
-from voice_agent.memory import get_memory_context
 
 logger = logging.getLogger(__name__)
 
 # Project directory where Claude Code runs from
 PROJECT_DIR = Path(__file__).parent.parent.parent
-DEFAULT_CONVERSATIONS_DIR = PROJECT_DIR / "conversations"
+# Default to voice-agent subdirectory for centralized conversations
+DEFAULT_CONVERSATIONS_DIR = PROJECT_DIR / "conversations" / "voice-agent"
 
 
 def _get_session_file(conversations_dir: Path | None = None) -> Path:
@@ -118,7 +118,6 @@ def ask_claude(
     timeout: int = 90,
     cwd: Path | None = None,
     conversations_dir: Path | None = None,
-    agent: str = "default",
 ) -> tuple[str, str]:
     """
     Send a prompt to Claude Code CLI and get the response.
@@ -131,7 +130,6 @@ def ask_claude(
         timeout: Maximum seconds to wait for response
         cwd: Working directory for Claude (determines which CLAUDE.md is loaded)
         conversations_dir: Directory for session files and conversation logs
-        agent: The current agent context for memory scoping
 
     Returns:
         Tuple of (response_text, thinking_text).
@@ -147,12 +145,6 @@ def ask_claude(
 
     # Load voice mode constraints (universal for all voice interactions)
     voice_mode_prompt = load_voice_mode_prompt()
-
-    # Fetch memory context (semantic + temporal)
-    memory_context = get_memory_context(prompt, agent=agent)
-    if memory_context:
-        voice_mode_prompt = f"{voice_mode_prompt}\n\n{memory_context}"
-        logger.debug(f"Injected memory context for agent={agent}")
 
     # Build CLI args - resume if we have today's conversation
     # Use stream-json + verbose to capture thinking blocks
@@ -177,6 +169,7 @@ def ask_claude(
             input=prompt,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=timeout,
             cwd=cwd,
         )
@@ -194,6 +187,7 @@ def ask_claude(
                 input=prompt,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 timeout=timeout,
                 cwd=cwd,
             )
@@ -220,7 +214,6 @@ async def stream_claude(
     prompt: str,
     cwd: Path | None = None,
     conversations_dir: Path | None = None,
-    agent: str = "default",
     timeout: int | None = None,
 ) -> AsyncGenerator[tuple[str, str, str], None]:
     """
@@ -230,7 +223,6 @@ async def stream_claude(
         prompt: The user's message/question
         cwd: Working directory for Claude (determines which CLAUDE.md is loaded)
         conversations_dir: Directory for session files and conversation logs
-        agent: The current agent context for memory scoping
         timeout: Optional total timeout in seconds. None means no timeout.
                  Note: For streaming, timeout applies to the entire operation,
                  not individual chunks. Consider that Claude may take time to think.
@@ -247,12 +239,6 @@ async def stream_claude(
 
     # Load voice mode constraints (universal for all voice interactions)
     voice_mode_prompt = load_voice_mode_prompt()
-
-    # Fetch memory context (semantic + temporal)
-    memory_context = get_memory_context(prompt, agent=agent)
-    if memory_context:
-        voice_mode_prompt = f"{voice_mode_prompt}\n\n{memory_context}"
-        logger.debug(f"Injected memory context for agent={agent}")
 
     # Build CLI args - resume if we have today's conversation
     conversation_id = get_conversation_id(conversations_dir)
